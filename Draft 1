@@ -1,0 +1,96 @@
+import numpy as np
+import math
+import random
+import matplotlib.pyplot as plt
+
+sigma = 0.1
+mass = 1
+epsilon = 0.1
+#positions, potentials and forces
+Number_particles = 3
+dt=0.005
+steps = 1000
+dimensions = 2
+
+def LJPot(ri,rj):
+    R_difference = ri-rj
+    R_distance = np.sqrt(R_difference.dot(R_difference))
+    LJpot = 4*epsilon*( (sigma/R_distance)**12 - (sigma/R_distance)**6 )
+    return LJpot
+
+def LJforce(ri,rj):
+    """-dV/d(R_difference) = -(dV/ri)(dri/d(R_difference))"""
+    R_difference = ri-rj
+    R_distance = np.sqrt(R_difference.dot(R_difference))
+    derivative_pot = 24*epsilon*((sigma**6/R_distance**8) - (2*sigma**12/R_distance**14))*R_difference
+    force = -derivative_pot
+    #Gives the components of the force between 2 particles
+    return force
+
+def LJacc(r):
+    a = np.zeros((Number_particles,dimensions))
+    for i in range(Number_particles):
+        for j in range(Number_particles):
+            if  i != j:
+                a[i,:] = a[i,:] + (1/mass)*LJforce(R[i,:], R[j,:])
+    return a
+
+def Kinetic_energy(v):
+    velocity_magnitude_squared = np.zeros(Number_particles)
+
+    for i in range(Number_particles):
+        velocity_magnitude_squared[i] = (v[i,:].dot(v[i,:]))
+    Kinetic_energy = 0.5*mass*velocity_magnitude_squared
+    KE_system = sum(Kinetic_energy)
+    return KE_system
+
+
+def Potential_Energy(R):
+    Potential = 0
+    for i in range(Number_particles):
+        for j in range(i+1,Number_particles):
+            Potential += LJPot(R[i,:],R[j,:])
+    return Potential
+
+
+#integrator; Velocty Verlet
+def Velocity_Verlet(R,v,dt):
+    v_half_delta_t = np.zeros((Number_particles,dimensions))
+    v_delta_t = np.zeros((Number_particles,dimensions))
+    r_delta_t = np.zeros((Number_particles,dimensions))
+    v_half_delta_t = v + 0.5*(LJacc(R))*dt
+    r_delta_t = R + (v_half_delta_t)*dt
+    v_delta_t = v_half_delta_t + 0.5*(LJacc(r_delta_t))*dt
+    return r_delta_t, v_delta_t
+
+
+#Initial positions and velocities
+np.random.seed(0)
+initial_R = np.random.random((Number_particles,dimensions))
+initial_v = np.random.random((Number_particles,dimensions))
+
+#initial_v = np.zeros((Number_particles,dimensions))
+R = initial_R
+v = initial_v
+
+#Updating List of energy and position
+List_of_energy = []
+List_of_positions = []
+List_of_velocity = []
+
+
+#Moving the simulation forward in time
+for i in range(steps):
+    R, v = Velocity_Verlet(R,v,dt)
+    List_of_positions.append(R)
+    List_of_velocity.append(v)
+    List_of_energy.append(Kinetic_energy(v)+Potential_Energy(R))
+
+
+
+
+fig, ax = plt.subplots()
+plt.plot(dt*np.arange(steps), List_of_energy)
+plt.ylabel("E")
+plt.xlabel("time")
+plt.show()
