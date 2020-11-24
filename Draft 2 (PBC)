@@ -1,0 +1,188 @@
+import numpy as np
+import math
+import random
+import matplotlib.pyplot as plt
+import itertools
+from matplotlib.animation import FuncAnimation
+
+"""
+Inputs needed:
+Starting positions: here we have placed that at random
+Starting velocities here we have placed that at random
+Physical parameters: http://phys.ubbcluj.ro/~tbeu/MD/C2_for.pdf Table 2.1 pg 5 for liquid argon (NOT ANY MORE)
+
+[Lennard-Jones potential used]
+[Half-step velocity verlet used]
+"""
+
+"""
+Units used:
+Energy      eV
+Force       eV/Angstrom
+Distance    Angstrom
+Time        fs
+Mass        eV fs^2/A^2 = 0.00964855 AMU
+"""
+
+sigma = 1 #length
+epsilon = 0.1 #energy
+mass = 40
+Number_particles = 8
+dt=1
+steps = 1000
+dimensions = 3
+a = 1 #CHANGE THIS
+lattice_size = a
+r_cutoff = 2.5*sigma
+
+
+"""general LJ potential, force, acceleration"""
+def LJPot(ri,rj):
+    R_difference = ri-rj
+    R_distance = np.sqrt(R_difference.dot(R_difference))
+    LJpot = 4*epsilon*( (sigma/R_distance)**12 - (sigma/R_distance)**6 )
+    return LJpot
+
+def LJforce(ri,rj):
+    #-dV/d(R_difference) = -(dV/ri)(dri/d(R_difference))
+    R_difference = ri-rj
+    R_distance = np.sqrt(R_difference.dot(R_difference))
+    derivative_pot = 24*epsilon*((sigma**6/R_distance**8) - (2*sigma**12/R_distance**14))*R_difference
+    force = -derivative_pot
+    #Gives the components of the force between 2 particles
+    return force
+
+def LJacc(r):
+    a = np.zeros((Number_particles,dimensions))
+    for i in range(Number_particles):
+        for j in range(Number_particles):
+            if  i != j:
+                a[i,:] = a[i,:] + (1/mass)*LJforce(R[i,:], R[j,:])
+    return a
+
+"""kinetic energy for cell particles"""
+def Kinetic_energy(v):
+    velocity_magnitude_squared = np.zeros(Number_particles)
+
+    for i in range(Number_particles):
+        velocity_magnitude_squared[i] = (v[i,:].dot(v[i,:]))
+    Kinetic_energy = 0.5*mass*velocity_magnitude_squared
+    KE_system = sum(Kinetic_energy)
+    return KE_system
+
+"""for cell only"""
+def Potential_Energy_cell(R):
+    Potential = 0
+    for i in range(Number_particles):
+        for j in range(i+1,Number_particles):
+            Potential += LJPot(R[i,:],R[j,:])
+    return Potential
+
+
+"""For Neighours """
+"""neighbour list"""
+vectors_a = list(itertools.product([-a,0,a], repeat=dimensions))
+
+#making a zero vector; and using list format to use .remove
+zero_a = list(([i * 0 for i in vectors_a[0]]))
+for i in range(0, len(vectors_a)):
+    vectors_a[i] = list((vectors_a[i]))
+vectors_a.remove(zero_a)
+
+#converting into np.array format
+zero_a = np.array(([i * 0 for i in vectors_a[0]]))
+for i in range(0, len(vectors_a)):
+    vectors_a[i] = np.array((vectors_a[i]))
+#vectors_a gives us a list of vectors, when added takes us to neighbouring cells
+vectors_a = np.array(vectors_a)
+
+
+"""neighbour potentials"""
+def Potential_Energy_neighbours(R):
+    Potential = 0
+    # goes through list of particles in cell
+    for i in range(Number_particles):
+        # goes through pairs of particles
+        for j in range(i+1,Number_particles):
+            # goes through pairs in neighbour cells
+            for k in range(0, len(vectors_a)):
+                # if pair distance is larger than cutoff then we ignore it
+                if np.sqrt(abs(R[i,:].dot(R[j,:]+vectors_a[k]))) <= r_cutoff:
+                    # also added smoothing potential (potential at cutoff = 0 by doing LJ(r) - LJ(r_cutoff))
+                    Potential += 0.5*(LJPot(R[i,:],R[j,:]+vectors_a[k]) - LJPot(R[i,:],R[i,:] + r_cutoff))
+                else:
+                    Potential = Potential + 0
+    return Potential
+
+"""Integrator; Velocty Verlet"""
+def Velocity_Verlet(R,v,dt):
+    v_half_delta_t = np.zeros((Number_particles,dimensions))
+    v_delta_t = np.zeros((Number_particles,dimensions))
+    r_delta_t = np.zeros((Number_particles,dimensions))
+    v_half_delta_t = v + 0.5*(LJacc(R))*dt
+    r_delta_t = R + (v_half_delta_t)*dt
+    v_delta_t = v_half_delta_t + 0.5*(LJacc(r_delta_t))*dt
+    return r_delta_t, v_delta_t
+
+
+#Initial positions and velocities
+np.random.seed(0)
+initial_R = 10*(np.random.random((Number_particles,dimensions)))
+initial_v = np.zeros((Number_particles,dimensions))
+
+#initial_v = np.zeros((Number_particles,dimensions))
+R = initial_R
+v = initial_v
+
+#Updating List of energy and position
+List_of_energy = []
+List_of_positions = []
+List_of_velocity = []
+
+
+#Moving the simulation forward in time
+for i in range(steps):
+    R, v = Velocity_Verlet(R,v,dt)
+    List_of_positions.append(R)
+    List_of_velocity.append(v)
+    List_of_energy.append(Kinetic_energy(v)+Potential_Energy_cell(R)+Potential_Energy_neighbours(R))
+
+print(List_of_positions[0][0])
+print("Initial kinetic:",Kinetic_energy(initial_v), "Initial Pot energy cell:",Potential_Energy_cell(initial_R),"Inital Pot energy neighbours:",Potential_Energy_neighbours(initial_R) )
+print("Final kinetic:",Kinetic_energy(v), "Final Pot energy cell:",Potential_Energy_cell(R), "Final Pot energy neighbours:",Potential_Energy_neighbours(R) )
+
+list_of_x_one_particle = []
+for i in range(0, len(List_of_positions)):
+    list_of_x_one_particle.append(List_of_positions[i][0][0])
+
+
+fig, ax = plt.subplots()
+plt.plot(dt*np.arange(steps), list_of_x_one_particle)
+plt.ylabel("x position of one particle")
+plt.xlabel("time (fs)")
+plt.show()
+
+
+fig, ax = plt.subplots()
+plt.plot(dt*np.arange(steps), List_of_energy)
+plt.ylabel("E")
+plt.xlabel("time (fs)")
+plt.show()
+
+#plot initial positions
+fig, ax = plt.subplots()
+for i in range(Number_particles):
+    plt.plot(initial_R[i, 0], initial_R[i, 1],'o')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.title('Initial positions')
+plt.show()
+
+#plot final positions
+fig, ax = plt.subplots()
+for i in range(Number_particles):
+    plt.plot(List_of_positions[-1][i, 0], List_of_positions[-1][i, 1],'o')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.title('Final positions')
+plt.show()
